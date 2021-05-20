@@ -1,3 +1,4 @@
+#include "OTA.h"
 #include <Arduino.h>
 #include <IRremoteESP8266.h>
 #include <IRsend.h>
@@ -15,6 +16,7 @@ const uint16_t IR_LED = 4;  // ESP8266 GPIO pin to use. Recommended: 4 (D2).
 const uint16_t STATUS_LED = 16;  // ESP8266 GPIO pin to use. Recommended: 4 (D0).
 
 IRsend irsend(IR_LED);  // Set the GPIO to be used to sending the message.
+void sendCode( int codeType, unsigned long codeValue, int repeat );
 
 // WiFi
 WiFiClient wifiClient;
@@ -36,9 +38,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
         IRcommand = IRcommand + (char)payload[i];
         i++;
     }
-    DynamicJsonDocument jsonBuffer(200);
-    // JsonObject& root = jsonBuffer.parseObject(payload);
-    auto error = deserializeJson(jsonBuffer, payload);
+    DynamicJsonDocument json(300);
+    auto error = deserializeJson(json, payload);
 
     // Test if parsing succeeds.
     if (error) {
@@ -47,19 +48,46 @@ void callback(char* topic, byte* payload, unsigned int length) {
         return;
     }
 
-    // int type = root["type"];
-    // unsigned long valu = root["value"];
-    // int len = root["length"];
-    // Serial.println("");
-    Serial.print("Payload ");
-    Serial.println(IRcommand);
-    // Serial.print("type ");
-    // Serial.println(type);
-    // Serial.print("value ");
-    // Serial.println(valu);
-    // Serial.print("length ");
-    // Serial.println(len);
-    // sendCode(type, valu, len);
+    // Check if json contains an array
+    JsonArray command_array = json.as<JsonArray>();
+
+    if(command_array) {
+
+      Serial.println("Seems to be an array of commands ");
+
+      // using C++11 syntax (preferred):
+      for (JsonVariant value : command_array) {
+          JsonObject command = value.as<JsonObject>();
+          unsigned long type = command["type"];
+          unsigned long valu =  strtoul(command["value"], (char**)0, 0);  // Conver from string to ulong
+          
+          int repeat = command["repeat"];
+
+          Serial.print("type ");
+          Serial.println(type);
+          Serial.print("value ");
+          Serial.println(valu);
+          Serial.print("repeat ");
+          Serial.println(repeat);
+          // Serial.println(value.as<char*>());
+      }
+
+
+    } else {
+
+      int type = json["type"];
+      unsigned long valu = json["value"];
+      int repeat = json["repeat"];
+      Serial.print("Payload ");
+      Serial.println(IRcommand);
+      Serial.print("type ");
+      Serial.println(type);
+      Serial.print("value ");
+      Serial.println(valu);
+      Serial.print("repeat ");
+      Serial.println(repeat);
+      // sendCode(type, valu, len);
+    }
 }
 
 PubSubClient client(server, 1883, callback, wifiClient);
@@ -100,6 +128,11 @@ void setup() {
     #else  // ESP8266
         Serial.begin(115200, SERIAL_8N1);
     #endif  // ESP8266
+
+    if(USE_OTA_UPDATE)
+        setupOTA("U-Remote", SSID, PASSWORD);
+
+
     pinMode(STATUS_LED, OUTPUT);
 
     Serial.println("Connecting to WiFi");
@@ -116,12 +149,15 @@ void setup() {
 
     irsend.begin();
 
-    // StaticJsonBuffer<200> jsonBuffer;
-    StaticJsonDocument<200> jsonBuffer;
+    // Staticjson<200> json;
+    StaticJsonDocument<200> json;
 
     // MQTT
     if (client.connect("UniversalRemote")) {
-        client.publish(SERVICETOPIC, "IR Box live");
+      char str[40];
+      strcpy(str,"IR Box live at: ");
+      strcat(str,  WiFi.localIP().toString().c_str());
+        client.publish(SERVICETOPIC, str);
         client.subscribe(COMMANDTOPIC);
     }
     Serial.println("Setup done");
@@ -131,5 +167,25 @@ void setup() {
 // ===               Main loop                                  ===
 // ================================================================
 void loop() {
+  ArduinoOTA.handle();
   client.loop();
+}
+
+
+void sendCode( int codeType, unsigned long codeValue, int repeat ) {
+  int codeLen = 32;
+
+  if (codeType == SAMSUNG) {
+    // Protocol Type 7
+    irsend.sendSAMSUNG(codeValue, codeLen, repeat);
+    Serial.print("Sent SAMSUNG ");
+    Serial.println(codeValue, HEX);
+  }
+  else if (codeType == RCMM) {
+    // Protocol Type 21
+    irsend.sendRCMM(codeValue, codeLen, repeat);
+    Serial.print("Sent RCMM ");
+    Serial.println(codeValue, HEX);
+  }
+  
 }
