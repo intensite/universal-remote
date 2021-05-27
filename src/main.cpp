@@ -14,6 +14,7 @@
 
 const uint16_t IR_LED = 4;  // ESP8266 GPIO pin to use. Recommended: 4 (D2).
 const uint16_t STATUS_LED = 16;  // ESP8266 GPIO pin to use. Recommended: 4 (D0).
+const int MULTICODE_DELAY = 500;       // Delay in milliseconds between multicode commands
 
 IRsend irsend(IR_LED);  // Set the GPIO to be used to sending the message.
 void sendCode( int codeType, unsigned long codeValue, int repeat );
@@ -31,7 +32,10 @@ WiFiClient wifiClient;
 //MQTT
 IPAddress server(192, 168, 70, 233);
 
+// Process the received MQTT Messages
 void callback(char* topic, byte* payload, unsigned int length) {
+  digitalWrite(STATUS_LED, HIGH);
+  
     String IRcommand = "";
     int i = 0;
     while (payload[i] > 0) {
@@ -63,31 +67,35 @@ void callback(char* topic, byte* payload, unsigned int length) {
           
           int repeat = command["repeat"];
 
-          Serial.print("type ");
-          Serial.println(type);
-          Serial.print("value ");
-          Serial.println(valu);
-          Serial.print("repeat ");
-          Serial.println(repeat);
-          // Serial.println(value.as<char*>());
+          // Serial.print("type ");
+          // Serial.println(type);
+          // Serial.print("value ");
+          // Serial.println(valu);
+          // Serial.print("repeat ");
+          // Serial.println(repeat);
+          sendCode(type, valu, repeat);
+          delay(MULTICODE_DELAY);
+
       }
 
 
     } else {
 
       int type = json["type"];
-      unsigned long valu = json["value"];
+      // unsigned long valu = json["value"];
+      unsigned long valu =  strtoul(json["value"], (char**)0, 0);  // Conver from string to ulong
       int repeat = json["repeat"];
-      Serial.print("Payload ");
-      Serial.println(IRcommand);
-      Serial.print("type ");
-      Serial.println(type);
-      Serial.print("value ");
-      Serial.println(valu);
-      Serial.print("repeat ");
-      Serial.println(repeat);
-      // sendCode(type, valu, len);
+      // Serial.print("Payload ");
+      // Serial.println(IRcommand);
+      // Serial.print("type ");
+      // Serial.println(type);
+      // Serial.print("value ");
+      // Serial.println(valu);
+      // Serial.print("repeat ");
+      // Serial.println(repeat);
+      sendCode(type, valu, repeat);
     }
+    digitalWrite(STATUS_LED, LOW);
 }
 
 PubSubClient client(server, 1883, callback, wifiClient);
